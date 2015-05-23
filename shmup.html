@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>projektJS_B</title>
+</head>
+<script src="jquery-2.1.1.min.js"></script>
+<script src="phaser.js"></script>
+<script>
+    
+    var game = new Phaser.Game(550, 584, Phaser.AUTO, 'projektJS_C', 
+                                   { preload: preload, create: create, update: update });
+
+    function preload() {
+        game.load.spritesheet('player', 'playership.png', 20, 18);
+        game.load.spritesheet('explosion', 'explosion.png', 21, 20);
+        game.load.image('playerbullet', 'playerbullet.png');
+        game.load.image('enemybullet', 'enemybullet.png');
+        game.load.image('background', '7c.png');
+        game.load.image('boss', 'bossship.png');
+        game.load.image('enemy', 'enemyship.png');
+        game.load.image('star', 'star.png');
+        game.load.image('crystal', 'crystal.png');
+    }
+
+    var stars;
+    var crystals;
+    var explosions;
+    var player;
+    var boss;
+    var bossAlive = false;
+    var enemy;
+    var enemies;
+    var aliveEnemy =[];
+    var spawnTime = 0;
+    var starTints = [];
+    
+    var bullets;
+    var bulletTime = 0;
+    var enemybullets;
+    var atkTime = 0;
+    var bossbullets;
+    var bossAtkTime = 0;
+    var starTime = 0;
+    var bonusTime = 0;
+    
+    var scoreString = "";
+    var scoreText;
+    var energyString = "";
+    var energyText;
+    var endText;
+    var winText;
+    
+    var score = 0;
+    var counterBoss = 0;
+    var energy = 5;
+    var interval = 0;
+    var counter = 0;
+    var currgun = 0;
+    
+    var bossHP = 50;
+    var bossExplosions = 20;
+    
+    var cursors;
+    var fireButton;
+
+    function create() {
+        game.physics.enable(this, Phaser.Physics.ARCADE);
+
+        game.add.sprite(0, 0, 'background');
+        
+        //gwiazdy
+        stars = game.add.group();
+        stars.enableBody = true;
+        stars.physicsBodyType = Phaser.Physics.ARCADE;
+        stars.setAll('anchor.x', 0.5);
+        stars.setAll('anchor.y', 0,5);
+        stars.createMultiple(240, 'star');
+        stars.setAll('outOfBoundsKill', true);
+        stars.setAll('checkWorldBounds', true);
+        starTints = [0xFFFFFF, 
+                  //   0xB03C3C, 
+                  //   0xb08989, 
+                   //  0x6E6EF3, 
+                     0x9494AC, 
+                   //  0x4AAE35, 
+                     0xCCE158];
+                
+        for(var i = 0; i < 100; i++){
+             var multiplier = game.rnd.integerInRange(20, 100)/100;
+             var star = stars.getFirstExists(false);
+             var rndTint = game.rnd.integerInRange(0, 2);
+             star.alpha = multiplier - 0.1;
+             star.scale.x = multiplier + 0.2;
+             star.scale.y = multiplier + 0.2;
+             star.rotation = Math.PI * game.rnd.integerInRange(1,100)/100;
+             star.tint = starTints[rndTint];
+             star.reset(game.rnd.integerInRange(0, game.world.width),
+                        game.rnd.integerInRange(0, game.world.height));
+             star.body.velocity.y = 50 * multiplier;
+            
+            
+        }
+
+        //pocisk gracza
+        bullets = game.add.group();
+        bullets.enableBody = true;
+        bullets.physicsBodyType = Phaser.Physics.ARCADE;
+        bullets.createMultiple(30, 'playerbullet');
+        bullets.setAll('anchor.x', 0.5);
+        bullets.setAll('anchor.y', 1);
+        bullets.setAll('outOfBoundsKill', true);
+        bullets.setAll('checkWorldBounds', true);
+
+        //pocisk przeciwnika
+        enemybullets = game.add.group();
+        enemybullets.enableBody = true;
+        enemybullets.physicsBodyType = Phaser.Physics.ARCADE;
+        enemybullets.createMultiple(120, 'enemybullet');
+        enemybullets.setAll('anchor.x', 0.5);
+        enemybullets.setAll('anchor.y', 1);
+        enemybullets.setAll('outOfBoundsKill', true);
+        enemybullets.setAll('checkWorldBounds', true);
+        
+        //pocisk bossa
+        bossbullets = game.add.group();
+        bossbullets.enableBody = true;
+        bossbullets.physicsBodyType = Phaser.Physics.ARCADE;
+        bossbullets.createMultiple(120, 'enemybullet');
+        bossbullets.setAll('anchor.x', 0.5);
+        bossbullets.setAll('anchor.y', 1);
+        bossbullets.setAll('scale.x', 1.2);
+        bossbullets.setAll('scale.y', 1.2);
+        bossbullets.setAll('outOfBoundsKill', true);
+        bossbullets.setAll('checkWorldBounds', true);
+        
+        //gracz
+        player = game.add.sprite(225, 530, 'player');
+        player.animations.add('strafe_left', [1]);
+        player.animations.add('strafe_right', [2]);
+        game.physics.arcade.enable(player);
+        player.body.collideWorldBounds = true;
+        player.body.immovable = true;
+        player.anchor.setTo(0.5, 0.5);
+        player.rotation = Math.PI;
+        
+        //przeciwnik
+        enemies = game.add.group();
+        enemies.enableBody = true;
+        enemies.physicsBodyType = Phaser.Physics.ARCADE;
+        
+        //wybuch
+        explosions = game.add.group();
+        explosions.createMultiple(30, 'explosion');
+        explosions.forEach(setExplo, this);
+        
+        //bonus krysztal
+        crystals = game.add.group();
+        bonusTime = game.time.now + 5000;
+        
+        //teksty
+        scoreString = 'Score: ';
+        scoreText = game.add.text(10, 10, scoreString + score, { font: '34px Arial', fill: '#fff' });
+        energyString = 'Shields: ';
+        energyText = game.add.text(10, 560, energyString + energy * 20 + '%', { font: '24px Arial', fill: '#fff' });
+        endText = game.add.text(game.world.centerX,game.world.centerY,' ', { font: '54px Arial', fill: '#000' });
+        endText.anchor.setTo(0.5, 0.5);
+        endText.visible = false;
+        winText = game.add.text(game.world.centerX,game.world.centerY,' ', { font: '54px Arial', fill: '#000' });
+        winText.anchor.setTo(0.5, 0.5);
+        winText.visible = false;
+        
+
+        //ustawienie strzalek
+        cursors = game.input.keyboard.createCursorKeys();
+        fireButton = game.input.keyboard.addKey(Phaser.Keyboard.SPACEBAR);
+        
+        //ustawienie pojawiania sie przeciwnikow
+        spawnTime = game.time.now;
+    }
+
+     function update() {
+        //ustawienie kolizji
+         game.physics.arcade.overlap(bullets, enemies, killEnemy, null, this);
+         game.physics.arcade.overlap(bullets, boss, killBoss, null, this);
+         game.physics.arcade.overlap(player, enemybullets, killPlayer, null, this);
+         game.physics.arcade.overlap(player, enemies, collidePlayer, null, this);
+         game.physics.arcade.overlap(player, boss, collidePlayerBoss, null, this);
+         game.physics.arcade.overlap(player, bossbullets, killPlayer, null, this);
+         game.physics.arcade.overlap(player, crystals, gatherBonus, null, this);
+         
+         
+        //gwiazdy
+         
+         if(game.time.now > starTime){
+             var multiplier = game.rnd.integerInRange(20, 100)/100;
+             var star = stars.getFirstExists(false);
+             var rndTint = game.rnd.integerInRange(0, 2);
+             star.tint = starTints[rndTint];
+             star.reset(game.rnd.integerInRange(0, game.world.width), 5);
+             star.body.velocity.y = 50 * multiplier;
+             starTime = game.time.now +150;
+             
+         }
+         
+         //bonus
+         
+         if(game.time.now > bonusTime){
+             var crystal = crystals.create(game.rnd.integerInRange(10, game.world.width), 22, 
+                                       'crystal');
+             crystal.scale.setTo(0.6, 0.6);
+             game.physics.enable(crystal, Phaser.Physics.ARCADE);
+             crystal.physicsBodyType = Phaser.Physics.ARCADE;
+             crystal.anchor.setTo(0.5, 0.5);
+             crystal.outOfBoundsKill = true;
+             crystal.checkWorldBounds = true;
+             crystal.body.velocity.setTo(0,75);
+             bonusTime = game.time.now + 15000;
+             
+         }
+        //spawn przeciwnikow
+         
+        if(game.time.now > spawnTime && bossHP > 0){
+            enemy = enemies.create((Math.random()*(game.world.width-100)) + 40, 0, 'enemy');
+            spawnTime = game.time.now + 600 - interval;
+            if(bossAlive) spawnTime = game.time.now +1200;
+            enemy.enableBody = true;
+            enemy.body.velocity.y = 100;
+            enemies.setAll('outOfBoundsKill', true);
+            enemies.setAll('checkWorldBounds', true);
+            
+        }
+         
+         //spawn bossa
+         if(!bossAlive && counterBoss == 50 && bossHP > 0){
+          
+            boss = game.add.sprite(200, 50, 'boss');
+            game.physics.arcade.enable(boss);
+            boss.body.collideWorldBounds = true;
+            boss.body.bounce.x = 1;
+            boss.body.velocity.x = 100;
+            boss.body.immovable = true;
+            bossAlive = true;
+
+         }
+        //resetowanie predkosci gracza
+        player.body.velocity.setTo(0, 0);
+         
+         if(player.alive){
+        // latanie
+            if (cursors.left.isDown){
+                player.body.velocity.x = -300;
+                if(!(cursors.up.isDown) && !(cursors.down.isDown))
+                    player.animations.play('strafe_right', 10, false);
+                player.frame_stop = 0;
+            }
+            else if(cursors.right.isDown){
+                    player.body.velocity.x = 300;
+                    if(!(cursors.up.isDown) && !(cursors.down.isDown))
+                        player.animations.play('strafe_left', 10, false);
+                    player.frame_stop = 0;
+            }
+            if(cursors.up.isDown){
+                    player.body.velocity.y = -200;
+                    player.frame_stop = 0;
+            }
+            else if(cursors.down.isDown){
+                    player.body.velocity.y = 200;
+                    player.frame_stop = 0;
+            }
+            else if(player.body.velocity.x == 0 && player.body.velocity.y == 0){
+                player.animations.stop();
+                player.frame = player.frame_stop;
+            }
+        // strzelanie gracz
+            if (fireButton.isDown){
+                fireBullet();
+            }
+             //strzelanie przeciwnicy
+            if(atkTime < game.time.now){
+                enemyAttack();
+            }
+             //salwa bossa
+            if(bossAlive && game.time.now > bossAtkTime){
+                bossAttack();
+            }
+         }
+         
+         //zabicie bossa
+         if(bossHP <= 0){
+             if(bossExplosions > 0){
+                 boss.kill();
+                 bossAlive = false;
+                 var explosion = explosions.getFirstExists(false);
+                 explosion.tint = 0xFFFFFF;
+                 explosion.scale.x = 2;
+                 explosion.scale.y = 2;
+                 explosion.reset(boss.body.x + game.rnd.integerInRange(10,155), 
+                                boss.body.y + game.rnd.integerInRange(20,80)
+                               );
+                 explosion.play('explosion', 10, false, true);
+                 bossExplosions--;
+             }
+             enemies.callAll('kill');
+             enemybullets.callAll('kill');
+             bossbullets.callAll('kill');
+             winText.text = '     You won! \n     Score: ' + score + '! \n Click to restart';
+             winText.visible = true;
+             game.input.onTap.addOnce(restart,this);
+         }
+            
+
+         
+         counter++;
+         if (counter%100 == 0) interval++;
+         if (counter%10000 == 0 && energy < 5 ) { 
+             energy++; 
+             energyText.text = energyString + energy * 20 + '%';
+         }
+     }
+
+    function setExplo(center){
+        center.anchor.x = 0.5;
+        center.anchor.y = 0.5;
+        center.animations.add('explosion');
+    }
+    //kolizje
+    //przeciwnik trafiony pociskiem
+    function killEnemy (bullet, enemy){
+        if(!bossAlive) score += 1;
+        else score +=3;
+        interval++;
+        counterBoss++;
+        scoreText.text = scoreString + score;
+        counter ++;
+        bullet.kill();
+        enemy.kill();
+        var explosion = explosions.getFirstExists(false);
+        explosion.tint = 0xFFFFFF;
+        explosion.reset(enemy.body.x + 15, enemy.body.y + 15);
+        explosion.play('explosion', 15, false, true);
+    }
+    //boss trafiony pociskiem
+    function killBoss (enemy, bullet){
+        bullet.kill();
+        bossHP--;
+    }
+    //gracz trafiony pociskiem
+    function killPlayer (player, enemybullet){
+        enemybullet.kill();
+        energy--;
+        energyText.text = energyString + energy * 20 + '%';
+       
+        var explosion1 = explosions.getFirstExists(false);
+        explosion1.scale.setTo(1.4, 1.4);
+        explosion1.tint = 0x1177FF;
+        explosion1.reset(player.body.x + 8, player.body.y + 8);
+        explosion1.play('explosion', 15, false, true);
+        if(energy <= 0) {
+            player.kill();
+            endText.text="    YOU DIED \n Click to restart";
+            endText.visible = true;
+            game.input.onTap.addOnce(restart,this);
+
+        }
+    }
+    //kolizja gracza ze statkiem
+    function collidePlayer( player, enemy){
+        enemy.kill();
+        var explosion = explosions.getFirstExists(false);
+        explosion.tint = 0xFFFFFF;
+        explosion.reset(enemy.body.x + 15, enemy.body.y + 15);
+        explosion.play('explosion', 15, false, true);
+        player.kill();
+        explosion = explosions.getFirstExists(false);
+        explosion.reset(player.body.x + 8, player.body.y + 8);
+        explosion.play('explosion', 15, false, true);
+        energyText.text = energyString + 0 + '%';
+        
+        endText.text="    YOU DIED \n Click to restart";
+        endText.visible = true;
+        game.input.onTap.addOnce(restart,this);
+        enemies.callAll('kill');
+        
+    }
+    //kolizja gracza z bossem
+    function collidePlayerBoss ( player, boss){
+        player.kill();
+        explosion = explosions.getFirstExists(false);
+        explosion.tint = 0xFFFFFF;
+        explosion.reset(player.body.x + 8, player.body.y + 8);
+        explosion.play('explosion', 15, false, true);
+        energyText.text = energyString + 0 + '%';
+        endText.text="    YOU DIED \n Click to restart";
+        endText.visible = true;
+        game.input.onTap.addOnce(restart,this);
+    }        
+    //gracz zbiera bonusowy krysztal
+    function gatherBonus ( player, crystal){
+        crystal.kill();
+        explosion = explosions.getFirstExists(false);
+        explosion.tint = 0xFF00FF;
+        explosion.reset(player.body.x + 8, player.body.y + 8);
+        explosion.play('explosion', 35, false, true);
+        score += 15;
+        scoreText.text = scoreString + score; 
+        if (energy < 5 ) { 
+            energy++; 
+            energyText.text = energyString + energy * 20 + '%';
+        }      
+    }
+    //koniec kolizji
+    //strzal gracza
+    function fireBullet () {
+
+        //  ograniczenie na szybkosc strzalu
+        if (game.time.now > bulletTime)
+        {
+            bullet = bullets.getFirstExists(false);
+
+            if (bullet)
+            {
+                //szczelanie
+                bullet.reset(player.x, player.y + 8);
+                bullet.body.velocity.y = -500;
+                bulletTime = game.time.now + 210;
+            }
+        }
+
+    }
+    //strzal przeciwnika
+    function enemyAttack(){
+     
+        enemybullet = enemybullets.getFirstExists(false);
+
+        aliveEnemy.length=0;
+        enemies.forEachAlive(function(enemy){
+        aliveEnemy.push(enemy);
+    });
+        //wybranie przeciwnika do strzelania
+       if (enemybullet && aliveEnemy.length > 0)
+        {
+            var random=game.rnd.integerInRange(0,aliveEnemy.length-1);
+            var shooter=aliveEnemy[random];
+            enemybullet.reset(shooter.body.x + 15, shooter.body.y + 15);
+            enemybullet.body.velocity.y = 300 + interval;
+            atkTime = game.time.now + 400 - interval;
+        }
+    }
+    //salwa bossa
+    function bossAttack(){
+        var gunsX = [5, 25, 65, 84, 104, 144, 164];
+        var gunsY = [ 48, 71, 83, 63, 83, 71, 48];
+        bossbullet = bossbullets.getFirstExists(false);
+        bossbullet.reset(boss.body.x + gunsX[currgun], boss.body.y +gunsY[currgun]);
+        bossbullet.body.velocity.y = 350;
+        bossAtkTime = game.time.now + 80;
+        currgun = game.rnd.integerInRange(0, 7);
+    }
+    
+    function restart(){
+        player.revive();
+        enemies.callAll('kill');
+        enemybullets.callAll('kill');
+        bossbullets.callAll('kill');
+        if(bossAlive) boss.kill();
+        player.position.x = 225;
+        player.position.y = 530;
+        energy = 5;
+        counter = 0;
+        counterBoss = 0;
+        bossHP = 50;
+        bossAlive = false;
+        bossExplosions = 20;
+        score = 0;
+        interval = 0;
+        endText.visible = false;
+        winText.visible = false;
+        energyText.text = energyString + energy * 20 + '%';
+        scoreText.text = scoreString + score;
+        bonusTime = game.time.now + 5000;
+        
+    }
+</script>
+<body>
+</body>
+</html>
